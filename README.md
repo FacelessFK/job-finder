@@ -1,59 +1,65 @@
-# Job Finder → Telegram
+# Job Finder → Telegram (Modular Pipeline)
 
-هر روز جاب‌های جدید برنامه‌نویسی را از JSearch می‌گیرد و به یک کانال تلگرام می‌فرستد.
+سرویس ماژولار که جاب‌های Remote/Relocation باکیفیت را از چند منبع پیدا و در تلگرام منتشر می‌کند.
+
+## معماری
+
+```
+Providers → Normalize → Merge → Dedup → Filter → Publish(Telegram)
+```
+
+هر منبع یک `Provider`، هر فیلتر یک `Filter`، ذخیره‌سازی یک `SeenStore`، انتشار یک `Publisher`.
+افزودن منبع جدید = یک فولدر در `internal/providers/` + یک خط blank-import در `cmd/jobfinder/main.go`.
+پروژه فقط با کتابخانه‌ی استاندارد Go ساخته شده (بدون وابستگی خارجی).
 
 ## پیش‌نیازها
 
-1. **کلید RapidAPI (JSearch):** در https://rapidapi.com ثبت‌نام کن، به JSearch مشترک شو
-   (پلن رایگان برای شروع کافی است) و کلید `X-RapidAPI-Key` را بردار.
-2. **بات تلگرام:** در تلگرام به `@BotFather` پیام بده، دستور `/newbot` را بزن،
-   نام و یوزرنیم بده و توکن را بردار.
-3. **کانال تلگرام:** یک کانال بساز، بات را به‌عنوان ادمین اضافه کن،
-   و آیدی کانال (`@yourchannel`) را بردار.
+- کلید RapidAPI برای JSearch و/یا یک LinkedIn Jobs API.
+- بات تلگرام (BotFather) + کانال (بات ادمین باشد).
 
 ## اجرای محلی
 
 ```bash
-cp .env.example .env
-# .env را با مقادیر واقعی پر کن
+cp .env.example .env          # رازها را پر کن
 set -a && source .env && set +a
-go run ./cmd/jobfinder
+go run ./cmd/jobfinder        # از config.json می‌خواند
 ```
 
-## اجرای خودکار (GitHub Actions)
+## تنظیمات
 
-سه مقدار زیر را در Settings → Secrets and variables → Actions مخزن ثبت کن:
+- **رازها** فقط در `.env` / GitHub Secrets: `RAPIDAPI_KEY`, `LINKEDIN_RAPIDAPI_KEY`,
+  `LINKEDIN_RAPIDAPI_HOST`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
+- **فیلترها و منابع** در `config.json` (فایل `config.example.json` نمونه است):
+  `providers`, `keywords`, `countries`, `remoteOnly`, `relocationOnly`,
+  `postedWithinHours`, `companyBlacklist`, ...
 
-- `RAPIDAPI_KEY`
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_CHAT_ID`
+پیش‌فرض `config.json` فقط `jsearch` را فعال دارد. برای فعال‌کردن لینکدین، `"linkedin"` را
+به `providers` اضافه کن و رازهای مربوطه را ست کن.
 
-workflow هر روز ساعت ۰۶:۰۰ UTC اجرا می‌شود و می‌توان از تب Actions دستی هم اجرایش کرد.
+## اجرای خودکار
 
-## تنظیمات (متغیرهای محیطی اختیاری)
-
-| متغیر | پیش‌فرض | توضیح |
-|-------|---------|-------|
-| `KEYWORDS` | چند عنوان رایج | کلمات کلیدی جست‌وجو، جداشده با کاما |
-| `DATE_POSTED` | `today` | `all` \| `today` \| `3days` \| `week` \| `month` |
-| `MAX_PER_RUN` | `20` | سقف پیام در هر اجرا |
-| `DELAY_SECONDS` | `4` | فاصله بین پیام‌ها |
-| `SUMMARY_RUNES` | `300` | حداکثر طول توضیح |
-
-## محدودیت‌ها
-
-- پلن رایگان JSearch درخواست محدودی دارد؛ برای حجم بالاتر پلن پولی لازم است.
-- خلاصه فارسی در فاز بعدی با Claude API اضافه می‌شود.
+`.github/workflows/daily.yml` روزی یک بار اجرا می‌شود (قابل‌تنظیم) و وضعیت را commit می‌کند.
+Secretها را در Settings → Secrets and variables → Actions ثبت کن.
 
 ## ساختار
 
 ```
-cmd/jobfinder/    نقطه شروع (هماهنگ‌کننده)
-internal/config/  خواندن تنظیمات از محیط
-internal/jsearch/ گرفتن جاب‌ها از JSearch
-internal/store/   ضدتکرار (جاب‌های دیده‌شده)
-internal/message/ ساخت متن پیام فارسی
-internal/summarize/ کوتاه‌سازی توضیح
-internal/telegram/  ارسال به کانال
-data/seen_jobs.json وضعیت ذخیره‌شده
+cmd/jobfinder/        Composition Root (DI)
+internal/core/        مدل دامنه
+internal/config/      خواندن env + config.json
+internal/providers/   Provider interface + linkedin, jsearch
+internal/normalize/   نرمال‌سازی
+internal/dedup/       تشخیص تکراری
+internal/filter/      زنجیره‌ی فیلتر قانون‌محور
+internal/store/       SeenStore (فایلی)
+internal/publisher/   Publisher + telegram
+internal/pipeline/    ارکستراسیون
+internal/retry/       backoff نمایی
+internal/ratelimit/   محدودیت نرخ
 ```
+
+## فازهای بعدی
+
+- فاز ۲: فیلتر AI با Claude (پشت همان `Filter`).
+- فاز ۳: Providerهای Greenhouse / Lever / Ashby / Workday.
+- فاز ۴: ذخیره‌سازی Upstash Redis (پشت همان `SeenStore`).

@@ -2,11 +2,11 @@ name: daily-job-finder
 
 on:
   schedule:
-    - cron: "0 6 * * *"   # هر روز ساعت ۰۶:۰۰ UTC
-  workflow_dispatch: {}    # امکان اجرای دستی
+    - cron: "0 6 * * *"   # روزی یک بار، ۰۶:۰۰ UTC
+  workflow_dispatch: {}
 
 permissions:
-  contents: write          # برای commit فایل وضعیت
+  contents: write
 
 concurrency:
   group: job-finder
@@ -16,21 +16,18 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-
-      - name: Run job finder
+      - name: Run
         env:
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+          LINKEDIN_RAPIDAPI_KEY: ${{ secrets.LINKEDIN_RAPIDAPI_KEY }}
+          LINKEDIN_RAPIDAPI_HOST: ${{ secrets.LINKEDIN_RAPIDAPI_HOST }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: go run ./cmd/jobfinder
-
       - name: Commit updated state
         run: |
           git config user.name "job-finder-bot"

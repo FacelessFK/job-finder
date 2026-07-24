@@ -1,0 +1,19 @@
+{
+  "providers": ["jsearch"],
+  "filters": {
+    "countries": ["US", "DE", "NL"],
+    "keywords": ["developer", "engineer", "backend", "golang"],
+    "excludeKeywords": ["sales", "manager"],
+    "employmentTypes": ["FULLTIME", "CONTRACTOR"],
+    "seniority": ["mid", "senior"],
+    "remoteOnly": false,
+    "relocationOnly": false,
+    "postedWithinHours": 48,
+    "companyWhitelist": [],
+    "companyBlacklist": []
+  },
+  "maxPerRun": 20,
+  "delaySeconds": 4,
+  "allowInternship": false,
+  "minDescriptionRunes": 200
+}
