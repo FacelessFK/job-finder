@@ -1,0 +1,44 @@
+name: daily-job-finder
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # هر روز ساعت ۰۶:۰۰ UTC
+  workflow_dispatch: {}    # امکان اجرای دستی
+
+permissions:
+  contents: write          # برای commit فایل وضعیت
+
+concurrency:
+  group: job-finder
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Run job finder
+        env:
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: go run ./cmd/jobfinder
+
+      - name: Commit updated state
+        run: |
+          git config user.name "job-finder-bot"
+          git config user.email "bot@users.noreply.github.com"
+          if ! git diff --quiet -- data/seen_jobs.json; then
+            git add data/seen_jobs.json
+            git commit -m "chore: update seen jobs [skip ci]"
+            git push
+          else
+            echo "no state change"
+          fi
