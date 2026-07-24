@@ -1,3 +1,4 @@
 .env
-jobfinder
+config.json
+/jobfinder
 /dist/
