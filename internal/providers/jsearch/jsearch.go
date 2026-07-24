@@ -60,7 +60,7 @@ func (p *Provider) SearchJobs(ctx context.Context, f core.Filters) ([]core.Job, 
 }
 
 func (p *Provider) searchOne(ctx context.Context, query, datePosted string, remoteOnly bool) ([]core.Job, error) {
-	u, _ := url.Parse(p.baseURL + "/search")
+	u, _ := url.Parse(p.baseURL + "/search-v2")
 	q := u.Query()
 	q.Set("query", query)
 	q.Set("date_posted", datePosted)
@@ -100,7 +100,9 @@ func (p *Provider) searchOne(ctx context.Context, query, datePosted string, remo
 }
 
 type rawResp struct {
-	Data []rawJob `json:"data"`
+	Data struct {
+		Jobs []rawJob `json:"jobs"`
+	} `json:"data"`
 }
 type rawJob struct {
 	JobID          string `json:"job_id"`
@@ -120,8 +122,8 @@ func parse(body []byte) ([]core.Job, error) {
 	if err := json.Unmarshal(body, &r); err != nil {
 		return nil, fmt.Errorf("parse jsearch: %w", err)
 	}
-	jobs := make([]core.Job, 0, len(r.Data))
-	for _, d := range r.Data {
+	jobs := make([]core.Job, 0, len(r.Data.Jobs))
+	for _, d := range r.Data.Jobs {
 		loc := d.City
 		if d.Country != "" {
 			if loc != "" {
