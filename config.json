@@ -2,8 +2,8 @@
   "providers": ["jsearch"],
   "filters": {
     "countries": ["US", "DE", "NL"],
-    "keywords": ["developer", "engineer", "backend", "golang"],
-    "excludeKeywords": ["sales", "manager"],
+    "keywords": ["developer", "engineer", "designer", "product manager"],
+    "excludeKeywords": ["sales"],
     "employmentTypes": ["FULLTIME", "CONTRACTOR"],
     "seniority": ["mid", "senior"],
     "remoteOnly": false,
