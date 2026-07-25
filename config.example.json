@@ -1,7 +1,7 @@
 {
   "providers": ["linkedin", "jsearch"],
   "filters": {
-    "countries": ["US", "CA", "MX", "GB", "DE", "NL", "IE", "AU"],
+    "countries": ["US", "CA", "GB", "DE", "NL", "IE", "AU"],
     "keywords": ["developer", "engineer", "backend", "golang"],
     "excludeKeywords": ["sales", "manager"],
     "employmentTypes": ["FULLTIME", "CONTRACTOR"],

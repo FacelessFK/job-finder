@@ -156,7 +156,7 @@ func realWorldCfg() core.Config {
 	return core.Config{
 		MinDescriptionRunes: 200,
 		Filters: core.Filters{
-			Countries:                 []string{"US", "CA", "MX", "GB", "DE", "NL", "IE", "AU"},
+			Countries:                 []string{"US", "CA", "GB", "DE", "NL", "IE", "AU"},
 			Keywords:                  []string{"developer", "engineer", "designer", "product manager"},
 			ExcludeKeywords:           []string{"sales"},
 			EmploymentTypes:           []string{"FULLTIME", "CONTRACTOR"},

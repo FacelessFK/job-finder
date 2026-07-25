@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,7 +26,7 @@ func TestSearchMapsJobs(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := &Provider{key: "k", baseURL: srv.URL, client: srv.Client()}
+	p := &Provider{keys: []string{"k"}, baseURL: srv.URL, client: srv.Client()}
 	jobs, err := p.SearchJobs(context.Background(), core.Filters{Keywords: []string{"backend"}})
 	if err != nil {
 		t.Fatalf("search: %v", err)
@@ -53,7 +54,7 @@ func TestSearchQueriesEachCountry(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := &Provider{key: "k", baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	p := &Provider{keys: []string{"k"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
 	_, err := p.SearchJobs(context.Background(), core.Filters{
 		Keywords:  []string{"developer"},
 		Countries: []string{"US", "AU"},
@@ -77,7 +78,7 @@ func TestSearchOmitsCountryWhenNoneConfigured(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := &Provider{key: "k", baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	p := &Provider{keys: []string{"k"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
 	if _, err := p.SearchJobs(context.Background(), core.Filters{Keywords: []string{"dev"}}); err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -97,7 +98,7 @@ func TestSearchSendsConfiguredNumPages(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := &Provider{key: "k", baseURL: srv.URL, client: srv.Client(), numPages: 3}
+	p := &Provider{keys: []string{"k"}, baseURL: srv.URL, client: srv.Client(), numPages: 3}
 	if _, err := p.SearchJobs(context.Background(), core.Filters{Keywords: []string{"dev"}}); err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -114,7 +115,7 @@ func TestSearchMapsCountryCode(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := &Provider{key: "k", baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	p := &Provider{keys: []string{"k"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
 	jobs, err := p.SearchJobs(context.Background(), core.Filters{Keywords: []string{"dev"}})
 	if err != nil {
 		t.Fatalf("search: %v", err)
@@ -132,7 +133,7 @@ func TestSearchDeduplicatesAcrossCountryQueries(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := &Provider{key: "k", baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	p := &Provider{keys: []string{"k"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
 	jobs, err := p.SearchJobs(context.Background(), core.Filters{
 		Keywords:  []string{"dev", "engineer"},
 		Countries: []string{"US", "DE"},
@@ -150,7 +151,8 @@ func TestSearchContinuesWhenOneQueryFails(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n++
 		if r.URL.Query().Get("country") == "us" {
-			w.WriteHeader(http.StatusForbidden)
+			// ۴۰۰ یعنی خودِ این پرس‌وجو بد است، نه اینکه کلید سوخته باشد.
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		w.Write([]byte(`{"status":"OK","data":{"jobs":[{
@@ -159,7 +161,7 @@ func TestSearchContinuesWhenOneQueryFails(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := &Provider{key: "k", baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	p := &Provider{keys: []string{"k"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
 	jobs, err := p.SearchJobs(context.Background(), core.Filters{
 		Keywords:  []string{"dev"},
 		Countries: []string{"US", "AU"},
@@ -179,7 +181,7 @@ func TestSearchSpacesOutRequests(t *testing.T) {
 	defer srv.Close()
 
 	p := &Provider{
-		key: "k", baseURL: srv.URL, client: srv.Client(), numPages: 1,
+		keys: []string{"k"}, baseURL: srv.URL, client: srv.Client(), numPages: 1,
 		limiter: ratelimit.New(50 * time.Millisecond),
 	}
 	start := time.Now()
@@ -191,5 +193,132 @@ func TestSearchSpacesOutRequests(t *testing.T) {
 	// سه درخواست با فاصله‌ی ۵۰ms یعنی دست‌کم دو بار انتظار.
 	if elapsed := time.Since(start); elapsed < 100*time.Millisecond {
 		t.Errorf("requests were not rate limited: elapsed %v", elapsed)
+	}
+}
+
+// quotaBody همان چیزی است که RapidAPI هنگام تمام‌شدن سهمیه‌ی ماهانه برمی‌گرداند.
+const quotaBody = `{"message":"You have exceeded the MONTHLY quota for Requests on your current plan, BASIC."}`
+
+func TestSwitchesToNextKeyWhenQuotaExhausted(t *testing.T) {
+	var usedKeys []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		k := r.Header.Get("X-RapidAPI-Key")
+		usedKeys = append(usedKeys, k)
+		if k == "k1" {
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(quotaBody))
+			return
+		}
+		w.Write([]byte(`{"status":"OK","data":{"jobs":[{
+			"job_id":"j1","job_title":"Dev","employer_name":"Acme",
+			"job_country":"US","job_apply_link":"https://a.test/1"}]}}`))
+	}))
+	defer srv.Close()
+
+	p := &Provider{keys: []string{"k1", "k2"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	jobs, err := p.SearchJobs(context.Background(), core.Filters{Keywords: []string{"dev"}})
+	if err != nil {
+		t.Fatalf("search should succeed on the second key: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	if len(usedKeys) < 2 || usedKeys[0] != "k1" || usedKeys[1] != "k2" {
+		t.Errorf("expected fallthrough k1 then k2, got %v", usedKeys)
+	}
+}
+
+func TestDoesNotRetryExhaustedKeyOnLaterQueries(t *testing.T) {
+	var usedKeys []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		k := r.Header.Get("X-RapidAPI-Key")
+		usedKeys = append(usedKeys, k)
+		if k == "k1" {
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(quotaBody))
+			return
+		}
+		w.Write([]byte(`{"status":"OK","data":{"jobs":[]}}`))
+	}))
+	defer srv.Close()
+
+	p := &Provider{keys: []string{"k1", "k2"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	if _, err := p.SearchJobs(context.Background(), core.Filters{
+		Keywords: []string{"a", "b", "c"},
+	}); err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	// k1 فقط یک‌بار امتحان می‌شود؛ بعد از آن باید کنار گذاشته شود.
+	var k1Count int
+	for _, k := range usedKeys {
+		if k == "k1" {
+			k1Count++
+		}
+	}
+	if k1Count != 1 {
+		t.Errorf("exhausted key was retried %d times, want 1", k1Count)
+	}
+}
+
+func TestFailsWhenAllKeysExhausted(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(quotaBody))
+	}))
+	defer srv.Close()
+
+	p := &Provider{keys: []string{"k1", "k2"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	_, err := p.SearchJobs(context.Background(), core.Filters{Keywords: []string{"dev"}})
+	if err == nil {
+		t.Fatal("expected an error when every key is exhausted")
+	}
+	if !strings.Contains(err.Error(), "exhausted") {
+		t.Errorf("error should name the exhaustion cause, got: %v", err)
+	}
+}
+
+func TestSwitchesKeyOnForbidden(t *testing.T) {
+	var usedKeys []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		k := r.Header.Get("X-RapidAPI-Key")
+		usedKeys = append(usedKeys, k)
+		if k == "bad" {
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"message":"You are not subscribed to this API."}`))
+			return
+		}
+		w.Write([]byte(`{"status":"OK","data":{"jobs":[]}}`))
+	}))
+	defer srv.Close()
+
+	p := &Provider{keys: []string{"bad", "good"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	if _, err := p.SearchJobs(context.Background(), core.Filters{Keywords: []string{"dev"}}); err != nil {
+		t.Fatalf("an invalid key should fall through to the next: %v", err)
+	}
+	if len(usedKeys) < 2 || usedKeys[1] != "good" {
+		t.Errorf("expected fallthrough to good key, got %v", usedKeys)
+	}
+}
+
+func TestRateLimitBurstStillRetriesSameKey(t *testing.T) {
+	var attempts int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			// ۴۲۹ بدون پیام سهمیه یعنی سقف لحظه‌ای، نه تمام‌شدن ماهانه.
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"message":"Too many requests"}`))
+			return
+		}
+		w.Write([]byte(`{"status":"OK","data":{"jobs":[]}}`))
+	}))
+	defer srv.Close()
+
+	p := &Provider{keys: []string{"only"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	if _, err := p.SearchJobs(context.Background(), core.Filters{Keywords: []string{"dev"}}); err != nil {
+		t.Fatalf("a burst 429 should be retried on the same key: %v", err)
+	}
+	if attempts < 2 {
+		t.Errorf("expected a retry, got %d attempts", attempts)
 	}
 }

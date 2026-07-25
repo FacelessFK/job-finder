@@ -1,10 +1,12 @@
-name: daily-job-finder
+name: job-finder
 
 on:
   schedule:
-    # ۰۵:۴۷ UTC ≈ ۰۹:۱۷ تهران. دقیقه‌ی غیرگرد عمدی است: صف زمان‌بندی
-    # گیت‌هاب سر ساعت شلوغ‌ترین حالت را دارد و تاخیر یا حذف اجرا رایج است.
-    - cron: "47 5 * * *"
+    # هر ۴ ساعت یک اجرا، هر اجرا یک کشور. شش اجرا در روز یعنی دوره‌ی
+    # کامل بیست کشور در ۳٫۳ روز، که با postedWithinHours=96 پوشش داده می‌شود.
+    # دقیقه‌ی غیرگرد عمدی است: صف زمان‌بندی گیت‌هاب سر ساعت شلوغ‌ترین
+    # حالت را دارد و تاخیر یا حذف اجرا رایج است.
+    - cron: "47 1,5,9,13,17,21 * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -24,7 +26,7 @@ jobs:
           go-version: "1.22"
       - name: Run
         env:
-          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+          RAPIDAPI_KEYS: ${{ secrets.RAPIDAPI_KEYS }}
           LINKEDIN_RAPIDAPI_KEY: ${{ secrets.LINKEDIN_RAPIDAPI_KEY }}
           LINKEDIN_RAPIDAPI_HOST: ${{ secrets.LINKEDIN_RAPIDAPI_HOST }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

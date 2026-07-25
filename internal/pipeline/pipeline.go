@@ -13,6 +13,7 @@ import (
 	"github.com/aghaie/job-finder/internal/normalize"
 	"github.com/aghaie/job-finder/internal/providers"
 	"github.com/aghaie/job-finder/internal/publisher"
+	"github.com/aghaie/job-finder/internal/rotate"
 	"github.com/aghaie/job-finder/internal/store"
 )
 
@@ -29,19 +30,27 @@ type Pipeline struct {
 	filters   core.Filters
 	maxPerRun int
 	delay     time.Duration
+	summary   core.SummaryMode
 }
 
 // New یک Pipeline می‌سازد.
 func New(provs []providers.Provider, chain *filter.Chain, st store.SeenStore, pub publisher.Publisher, log *slog.Logger, cfg core.Config) *Pipeline {
+	f := cfg.Filters
+	// چرخش کشورها: هر اجرا فقط بخشی از فهرست را می‌گیرد تا سهمیه‌ی API
+	// در طول شبانه‌روز پخش شود به‌جای مصرف یک‌جا.
+	f.Countries = rotate.Slice(f.Countries, time.Now().UTC(),
+		cfg.Rotation.SlotHours, cfg.Rotation.CountriesPerRun)
+
 	return &Pipeline{
 		providers: provs,
 		chain:     chain,
 		store:     st,
 		pub:       pub,
 		log:       log,
-		filters:   cfg.Filters,
+		filters:   f,
 		maxPerRun: cfg.MaxPerRun,
 		delay:     time.Duration(cfg.DelaySeconds) * time.Second,
+		summary:   cfg.Summary,
 	}
 }
 
@@ -100,10 +109,12 @@ func (p *Pipeline) Run(ctx context.Context) (Stats, error) {
 		return stats, err
 	}
 
-	// ۹) گزارش پایان اجرا؛ حتی وقتی چیزی منتشر نشده، تا سکوت کانال
-	// دیگر به معنای «معلوم نیست چه شد» نباشد.
-	if err := p.pub.PublishSummary(ctx, stats); err != nil {
-		p.log.Warn("summary publish failed", "err", err)
+	// ۹) گزارش پایان اجرا طبق حالت پیکربندی‌شده. با اجراهای پرتکرار،
+	// حالت onChange فقط وقتی حرف می‌زند که چیزی منتشر شده یا خطایی داده.
+	if p.summary.ShouldSend(stats) {
+		if err := p.pub.PublishSummary(ctx, stats); err != nil {
+			p.log.Warn("summary publish failed", "err", err)
+		}
 	}
 
 	p.log.Info("run complete",

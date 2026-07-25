@@ -11,13 +11,15 @@ import (
 )
 
 type fileConfig struct {
-	Providers           []string     `json:"providers"`
-	Filters             core.Filters `json:"filters"`
-	MaxPerRun           int          `json:"maxPerRun"`
-	DelaySeconds        int          `json:"delaySeconds"`
-	AllowInternship     bool         `json:"allowInternship"`
-	MinDescriptionRunes int          `json:"minDescriptionRunes"`
-	NumPages            int          `json:"numPages"`
+	Providers           []string         `json:"providers"`
+	Filters             core.Filters     `json:"filters"`
+	MaxPerRun           int              `json:"maxPerRun"`
+	DelaySeconds        int              `json:"delaySeconds"`
+	AllowInternship     bool             `json:"allowInternship"`
+	MinDescriptionRunes int              `json:"minDescriptionRunes"`
+	NumPages            int              `json:"numPages"`
+	Rotation            core.Rotation    `json:"rotation"`
+	Summary             core.SummaryMode `json:"summary"`
 }
 
 // Load فایل config و رازهای env را می‌خواند و اعتبارسنجی می‌کند.
@@ -42,10 +44,12 @@ func Load(path string) (core.Config, error) {
 		AllowInternship:     fc.AllowInternship,
 		MinDescriptionRunes: orDefault(fc.MinDescriptionRunes, 200),
 		NumPages:            orDefault(fc.NumPages, 1),
+		Rotation:            fc.Rotation,
+		Summary:             orDefaultMode(fc.Summary, core.SummaryOnChange),
 		SeenPath:            getEnv("SEEN_PATH", "data/seen_jobs.json"),
 		MaxSeen:             orDefault(atoiEnv("MAX_SEEN"), 5000),
 		Secrets: core.Secrets{
-			RapidAPIKey:    os.Getenv("RAPIDAPI_KEY"),
+			RapidAPIKeys:   splitKeys(os.Getenv("RAPIDAPI_KEYS"), os.Getenv("RAPIDAPI_KEY")),
 			LinkedInKey:    os.Getenv("LINKEDIN_RAPIDAPI_KEY"),
 			LinkedInHost:   os.Getenv("LINKEDIN_RAPIDAPI_HOST"),
 			LinkedInPath:   getEnv("LINKEDIN_RAPIDAPI_PATH", "/search"),
@@ -73,8 +77,8 @@ func validate(cfg core.Config) error {
 	for _, p := range cfg.Providers {
 		switch p {
 		case "jsearch":
-			if cfg.Secrets.RapidAPIKey == "" {
-				missing = append(missing, "RAPIDAPI_KEY (for jsearch)")
+			if len(cfg.Secrets.RapidAPIKeys) == 0 {
+				missing = append(missing, "RAPIDAPI_KEYS or RAPIDAPI_KEY (for jsearch)")
 			}
 		case "linkedin":
 			if cfg.Secrets.LinkedInKey == "" {
@@ -89,6 +93,15 @@ func validate(cfg core.Config) error {
 		return fmt.Errorf("missing required env vars: %s", strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+func orDefaultMode(v, def core.SummaryMode) core.SummaryMode {
+	switch v {
+	case core.SummaryAlways, core.SummaryOnChange, core.SummaryNever:
+		return v
+	default:
+		return def
+	}
 }
 
 func orDefault(v, def int) int {
@@ -118,4 +131,21 @@ func atoiEnv(key string) int {
 		n = n*10 + int(r-'0')
 	}
 	return n
+}
+
+// splitKeys کلیدهای RapidAPI را از env می‌خواند. RAPIDAPI_KEYS فهرستی
+// جداشده با کاما است؛ RAPIDAPI_KEY تک‌کلیدی و برای سازگاری با قبل.
+// تکراری‌ها حذف می‌شوند تا یک کلیدِ سوخته دوبار امتحان نشود.
+func splitKeys(multi, single string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, raw := range append(strings.Split(multi, ","), single) {
+		k := strings.TrimSpace(raw)
+		if k == "" || seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, k)
+	}
+	return out
 }

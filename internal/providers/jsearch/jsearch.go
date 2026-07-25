@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aghaie/job-finder/internal/core"
@@ -25,31 +26,61 @@ func init() {
 
 // Provider منبع JSearch.
 type Provider struct {
-	key      string
+	keys     []string
 	baseURL  string
 	client   *http.Client
 	numPages int
 	limiter  *ratelimit.Limiter
+
+	mu      sync.Mutex
+	keyIdx  int          // کلید فعالِ فعلی
+	retired map[int]bool // کلیدهایی که سهمیه‌شان تمام شده یا نامعتبرند
 }
 
 // New یک Provider از روی config می‌سازد.
 func New(cfg core.Config) (providers.Provider, error) {
-	if cfg.Secrets.RapidAPIKey == "" {
-		return nil, fmt.Errorf("RAPIDAPI_KEY is required for jsearch")
+	if len(cfg.Secrets.RapidAPIKeys) == 0 {
+		return nil, fmt.Errorf("RAPIDAPI_KEY or RAPIDAPI_KEYS is required for jsearch")
 	}
 	pages := cfg.NumPages
 	if pages <= 0 {
 		pages = 1
 	}
 	return &Provider{
-		key:      cfg.Secrets.RapidAPIKey,
+		keys:     cfg.Secrets.RapidAPIKeys,
 		baseURL:  "https://jsearch.p.rapidapi.com",
 		client:   &http.Client{Timeout: 30 * time.Second},
 		numPages: pages,
-		// حالا ضربِ کشور در کلمه‌ی کلیدی ده‌ها درخواست پشت‌سرهم می‌سازد؛
+		retired:  map[int]bool{},
+		// حالا ضربِ کشور در کلمه‌ی کلیدی چند درخواست پشت‌سرهم می‌سازد؛
 		// بدون فاصله‌گذاری، سقفِ نرخِ RapidAPI فعال می‌شود.
 		limiter: ratelimit.New(300 * time.Millisecond),
 	}, nil
+}
+
+// nextLiveKey کلید فعالِ بعدی را می‌دهد؛ اگر همه بازنشسته شده باشند false.
+func (p *Provider) nextLiveKey() (int, string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for i := 0; i < len(p.keys); i++ {
+		idx := (p.keyIdx + i) % len(p.keys)
+		if !p.retired[idx] {
+			p.keyIdx = idx
+			return idx, p.keys[idx], true
+		}
+	}
+	return 0, "", false
+}
+
+// retire یک کلید را کنار می‌گذارد تا در ادامه‌ی همین اجرا دوباره امتحان نشود.
+func (p *Provider) retire(idx int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.retired == nil {
+		p.retired = map[int]bool{}
+	}
+	p.retired[idx] = true
+	p.keyIdx = (idx + 1) % len(p.keys)
 }
 
 func (p *Provider) Name() string { return "jsearch" }
@@ -123,6 +154,26 @@ func (p *Provider) searchOne(ctx context.Context, query, country, datePosted str
 	}
 	u.RawQuery = q.Encode()
 
+	// هر کلید یک‌بار امتحان می‌شود؛ کلیدِ سوخته بازنشسته و بعدی جایگزین می‌شود.
+	for range p.keys {
+		idx, key, ok := p.nextLiveKey()
+		if !ok {
+			break
+		}
+		body, err := p.doRequest(ctx, u.String(), key)
+		if err == nil {
+			return parse(body)
+		}
+		if isKeyDead(err) {
+			p.retire(idx)
+			continue
+		}
+		return nil, fmt.Errorf("jsearch %q: %w", query, err)
+	}
+	return nil, fmt.Errorf("jsearch %q: all %d API keys exhausted", query, len(p.keys))
+}
+
+func (p *Provider) doRequest(ctx context.Context, url, key string) ([]byte, error) {
 	if p.limiter != nil {
 		if err := p.limiter.Wait(ctx); err != nil {
 			return nil, err
@@ -131,11 +182,11 @@ func (p *Provider) searchOne(ctx context.Context, query, country, datePosted str
 
 	var body []byte
 	err := retry.Do(ctx, 3, 500*time.Millisecond, isRetryable, func() error {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return err
 		}
-		req.Header.Set("X-RapidAPI-Key", p.key)
+		req.Header.Set("X-RapidAPI-Key", key)
 		req.Header.Set("X-RapidAPI-Host", "jsearch.p.rapidapi.com")
 		resp, err := p.client.Do(req)
 		if err != nil {
@@ -151,10 +202,22 @@ func (p *Provider) searchOne(ctx context.Context, query, country, datePosted str
 		}
 		return nil
 	})
-	if err != nil {
-		return nil, fmt.Errorf("jsearch %q: %w", query, err)
+	return body, err
+}
+
+// isKeyDead یعنی مشکل از خودِ کلید است و تلاش دوباره با همان کلید بی‌فایده:
+// سهمیه‌ی ماهانه تمام شده یا اشتراک نامعتبر است.
+func isKeyDead(err error) bool {
+	var he *httpError
+	if !errors.As(err, &he) {
+		return false
 	}
-	return parse(body)
+	if he.status == http.StatusForbidden || he.status == http.StatusUnauthorized {
+		return true
+	}
+	// ۴۲۹ دو معنی دارد: سقف لحظه‌ای (قابل تلاش مجدد) یا سهمیه‌ی ماهانه (نه).
+	return he.status == http.StatusTooManyRequests &&
+		strings.Contains(strings.ToLower(he.body), "quota")
 }
 
 type rawResp struct {
@@ -240,6 +303,9 @@ func (e *httpError) Error() string { return fmt.Sprintf("http %d: %s", e.status,
 
 func isRetryable(err error) bool {
 	if he, ok := err.(*httpError); ok {
+		if isKeyDead(he) {
+			return false // تلاش دوباره با کلیدِ سوخته فقط وقت تلف می‌کند
+		}
 		return he.status == 429 || he.status >= 500
 	}
 	return true // خطاهای شبکه/timeout قابل‌تلاش مجددند

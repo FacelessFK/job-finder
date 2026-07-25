@@ -23,6 +23,16 @@ func (f fakeProvider) SearchJobs(context.Context, core.Filters) ([]core.Job, err
 	return f.jobs, f.err
 }
 
+type recordingProvider struct {
+	onSearch func(core.Filters)
+}
+
+func (r *recordingProvider) Name() string { return "recording" }
+func (r *recordingProvider) SearchJobs(_ context.Context, f core.Filters) ([]core.Job, error) {
+	r.onSearch(f)
+	return nil, nil
+}
+
 type fakePublisher struct {
 	sent      []core.Job
 	summaries []core.RunSummary
@@ -95,7 +105,8 @@ func TestRunPublishesSummaryWhenNothingIsNew(t *testing.T) {
 	pub := &fakePublisher{}
 	st, _ := store.NewFileStore(t.TempDir()+"/seen.json", 100)
 
-	p := New([]providers.Provider{prov}, allowAllChain(), st, pub, quiet(), core.Config{MaxPerRun: 10})
+	cfg := core.Config{MaxPerRun: 10, Summary: core.SummaryAlways}
+	p := New([]providers.Provider{prov}, allowAllChain(), st, pub, quiet(), cfg)
 	if _, err := p.Run(context.Background()); err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -121,5 +132,89 @@ func TestSummaryReportsProviderErrors(t *testing.T) {
 	}
 	if len(pub.summaries[0].Errors) == 0 {
 		t.Error("summary should carry the provider error so a silent run is impossible")
+	}
+}
+
+func TestSummaryModeOnChangeStaysQuietWhenNothingHappened(t *testing.T) {
+	prov := fakeProvider{name: "fake", jobs: nil}
+	pub := &fakePublisher{}
+	st, _ := store.NewFileStore(t.TempDir()+"/seen.json", 100)
+
+	cfg := core.Config{MaxPerRun: 10, Summary: core.SummaryOnChange}
+	p := New([]providers.Provider{prov}, allowAllChain(), st, pub, quiet(), cfg)
+	if _, err := p.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(pub.summaries) != 0 {
+		t.Errorf("onChange should stay quiet on an empty run, got %d", len(pub.summaries))
+	}
+}
+
+func TestSummaryModeOnChangeReportsErrors(t *testing.T) {
+	bad := fakeProvider{name: "bad", err: context.DeadlineExceeded}
+	pub := &fakePublisher{}
+	st, _ := store.NewFileStore(t.TempDir()+"/seen.json", 100)
+
+	cfg := core.Config{MaxPerRun: 10, Summary: core.SummaryOnChange}
+	p := New([]providers.Provider{bad}, allowAllChain(), st, pub, quiet(), cfg)
+	if _, err := p.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(pub.summaries) != 1 {
+		t.Errorf("onChange must still report failures, got %d summaries", len(pub.summaries))
+	}
+}
+
+func TestSummaryModeNeverStaysQuietEvenOnError(t *testing.T) {
+	bad := fakeProvider{name: "bad", err: context.DeadlineExceeded}
+	pub := &fakePublisher{}
+	st, _ := store.NewFileStore(t.TempDir()+"/seen.json", 100)
+
+	cfg := core.Config{MaxPerRun: 10, Summary: core.SummaryNever}
+	p := New([]providers.Provider{bad}, allowAllChain(), st, pub, quiet(), cfg)
+	if _, err := p.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(pub.summaries) != 0 {
+		t.Errorf("never should send nothing, got %d", len(pub.summaries))
+	}
+}
+
+func TestRotationLimitsCountriesPassedToProvider(t *testing.T) {
+	var gotCountries []string
+	prov := &recordingProvider{onSearch: func(f core.Filters) { gotCountries = f.Countries }}
+	pub := &fakePublisher{}
+	st, _ := store.NewFileStore(t.TempDir()+"/seen.json", 100)
+
+	cfg := core.Config{
+		MaxPerRun: 10,
+		Filters:   core.Filters{Countries: []string{"US", "CA", "GB", "DE"}},
+		Rotation:  core.Rotation{SlotHours: 4, CountriesPerRun: 1},
+	}
+	p := New([]providers.Provider{prov}, allowAllChain(), st, pub, quiet(), cfg)
+	if _, err := p.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(gotCountries) != 1 {
+		t.Fatalf("provider got %d countries, want 1 (rotation active): %v", len(gotCountries), gotCountries)
+	}
+}
+
+func TestNoRotationPassesEveryCountry(t *testing.T) {
+	var gotCountries []string
+	prov := &recordingProvider{onSearch: func(f core.Filters) { gotCountries = f.Countries }}
+	pub := &fakePublisher{}
+	st, _ := store.NewFileStore(t.TempDir()+"/seen.json", 100)
+
+	cfg := core.Config{
+		MaxPerRun: 10,
+		Filters:   core.Filters{Countries: []string{"US", "CA", "GB", "DE"}},
+	}
+	p := New([]providers.Provider{prov}, allowAllChain(), st, pub, quiet(), cfg)
+	if _, err := p.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(gotCountries) != 4 {
+		t.Errorf("without rotation all 4 countries should be searched, got %v", gotCountries)
 	}
 }

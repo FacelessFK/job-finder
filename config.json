@@ -1,7 +1,12 @@
 {
   "providers": ["jsearch"],
   "filters": {
-    "countries": ["US", "CA", "MX", "GB", "DE", "NL", "IE", "AU"],
+    "countries": [
+      "US", "CA",
+      "GB", "IE", "DE", "NL", "FR", "ES", "IT", "PT",
+      "SE", "DK", "NO", "FI", "CH", "AT", "BE", "PL", "CZ",
+      "AU"
+    ],
     "keywords": ["developer", "engineer", "designer", "product manager"],
     "excludeKeywords": ["sales"],
     "employmentTypes": ["FULLTIME", "CONTRACTOR"],
@@ -9,10 +14,15 @@
     "remoteOnly": false,
     "relocationOnly": false,
     "requireRemoteOrRelocation": true,
-    "postedWithinHours": 48,
+    "postedWithinHours": 96,
     "companyWhitelist": [],
     "companyBlacklist": []
   },
+  "rotation": {
+    "slotHours": 4,
+    "countriesPerRun": 1
+  },
+  "summary": "onChange",
   "numPages": 1,
   "maxPerRun": 25,
   "delaySeconds": 4,
