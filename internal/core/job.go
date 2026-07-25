@@ -28,7 +28,15 @@ type Job struct {
 
 // Filters معیارهای جست‌وجو و فیلترکردن.
 type Filters struct {
-	Countries         []string
+	Countries []string
+
+	// SearchQueries عبارت‌هایی که به API فرستاده می‌شوند. عمداً از Keywords
+	// جداست: عبارتی مثل «remote developer» برای جست‌وجو عالی است ولی
+	// به‌عنوان زیررشته‌ی اجباری در عنوان، تقریباً همه‌چیز را رد می‌کند.
+	// خالی باشد، از Keywords استفاده می‌شود.
+	SearchQueries []string
+
+	// Keywords فقط برای فیلترکردن نتیجه است و باید عام بماند.
 	Keywords          []string
 	ExcludeKeywords   []string
 	EmploymentTypes   []string

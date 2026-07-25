@@ -205,3 +205,30 @@ func TestRealConfigAcceptsTargetRegions(t *testing.T) {
 		}
 	}
 }
+
+// کلمات ممنوع باید فقط روی عنوان اعمال شوند. اعمالشان روی متن توضیحات
+// آگهی‌های سالم را می‌کشد، چون تقریبا هر شرکتی جایی از تیم فروش حرف می‌زند.
+func TestExcludeKeywordAppliesToTitleNotDescription(t *testing.T) {
+	cfg := baseCfg()
+	cfg.Filters.ExcludeKeywords = []string{"sales"}
+	c := BuildRuleChain(quietLog(), cfg)
+	desc := "a long enough description here"
+
+	mentionsSales := core.Job{
+		Title:       "Senior Full-Stack Engineer",
+		Remote:      true,
+		Description: desc + " you will work closely with the sales team",
+	}
+	if !c.Allow(context.Background(), mentionsSales) {
+		t.Error("an engineering job that merely mentions sales should pass")
+	}
+
+	actualSalesJob := core.Job{
+		Title:       "Sales Engineer",
+		Remote:      true,
+		Description: desc,
+	}
+	if c.Allow(context.Background(), actualSalesJob) {
+		t.Error("a job whose title says Sales should be rejected")
+	}
+}

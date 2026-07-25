@@ -1,13 +1,18 @@
 {
   "providers": ["jsearch"],
   "filters": {
-    "countries": [
-      "US", "CA",
-      "GB", "IE", "DE", "NL", "FR", "ES", "IT", "PT",
-      "SE", "DK", "NO", "FI", "CH", "AT", "BE", "PL", "CZ",
-      "AU"
+    "_countriesNote": "فقط کشورهایی که JSearch واقعا پوشش می‌دهد. اندازه‌گیری ۲۰۲۶-۰۷-۲۵ نشان داد IE NL SE DK NO FI BE PL CZ AU با هر پرس‌وجو صفر برمی‌گردانند.",
+    "countries": ["US", "GB", "DE", "CA", "FR", "ES", "IT", "PT", "CH", "AT"],
+    "searchQueries": [
+      "remote developer",
+      "remote engineer",
+      "remote designer",
+      "remote product manager"
     ],
-    "keywords": ["developer", "engineer", "designer", "product manager"],
+    "keywords": [
+      "developer", "engineer", "designer", "product manager",
+      "entwickler", "ingenieur", "ontwikkelaar", "développeur", "desarrollador"
+    ],
     "excludeKeywords": ["sales"],
     "employmentTypes": ["FULLTIME", "CONTRACTOR"],
     "seniority": ["mid", "senior", "lead"],

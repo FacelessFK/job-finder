@@ -7,9 +7,15 @@ import (
 	"github.com/aghaie/job-finder/internal/core"
 )
 
+// remoteSignals عبارت‌هایی که دورکاری را نشان می‌دهند. «remote» تنها عمداً
+// نیست چون در «remote team» یا «remote server» هم می‌آید.
 var remoteSignals = []string{
 	"fully remote", "100% remote", "work from anywhere",
 	"remote-first", "remote first", "fully-remote",
+	"remote-option", "remote option", "remote possible", "remote work",
+	// آلمانی: بازار اروپا بیشتر آگهی‌هایش بومی نوشته شده است.
+	"homeoffice", "home office", "vollständig remote", "komplett remote",
+	"remote möglich", "remote-arbeit",
 }
 
 // relocationSignals عبارت‌هایی که پشتیبانی از ویزا یا جابه‌جایی را نشان می‌دهند.
@@ -24,6 +30,10 @@ var relocationSignals = []string{
 	"relocation bonus", "relocation allowance", "relocation help",
 	"help with relocation", "help you relocate", "we relocate you",
 	"willing to relocate", "relocation offered", "relocation provided",
+	"relocation-paket", "relocation paket",
+	// آلمانی
+	"visum", "arbeitserlaubnis", "umzugshilfe", "umzugskosten",
+	"aufenthaltstitel", "arbeitsvisum",
 }
 
 // Job یک جاب را نرمال می‌کند: پاک‌سازی فاصله‌ها، استانداردسازی نوع/سطح، و
@@ -37,7 +47,7 @@ func Job(j core.Job) core.Job {
 	j.Seniority = normSeniority(j.Seniority)
 
 	hay := strings.ToLower(j.Title + " " + j.Location + " " + j.Description)
-	if !j.Remote && containsAny(hay, remoteSignals) {
+	if !j.Remote && (containsAny(hay, remoteSignals) || titleSaysRemote(j.Title)) {
 		j.Remote = true
 	}
 	if !j.Relocation && containsAny(hay, relocationSignals) {
@@ -96,4 +106,23 @@ func normSeniority(s string) string {
 	default:
 		return l
 	}
+}
+
+// titleSaysRemote وقتی «remote» به‌صورت یک واژه‌ی مستقل در عنوان بیاید true
+// می‌دهد. عنوان‌ها کوتاه و بی‌ابهام‌اند؛ برخلاف توضیحات که «remote server»
+// هم در آن پیدا می‌شود. تنها استثنای واقعی «remote sensing» است که نام یک
+// حوزه‌ی کاری است نه نحوه‌ی کار.
+func titleSaysRemote(title string) bool {
+	l := strings.ToLower(title)
+	if strings.Contains(l, "remote sensing") {
+		return false
+	}
+	for _, w := range strings.FieldsFunc(l, func(r rune) bool {
+		return !('a' <= r && r <= 'z') && !('0' <= r && r <= '9')
+	}) {
+		if w == "remote" {
+			return true
+		}
+	}
+	return false
 }

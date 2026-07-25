@@ -1,15 +1,46 @@
 {
-  "providers": ["linkedin", "jsearch"],
+  "providers": [
+    "linkedin",
+    "jsearch"
+  ],
   "filters": {
-    "countries": ["US", "CA", "GB", "DE", "NL", "IE", "AU"],
-    "keywords": ["developer", "engineer", "backend", "golang"],
-    "excludeKeywords": ["sales", "manager"],
-    "employmentTypes": ["FULLTIME", "CONTRACTOR"],
-    "seniority": ["mid", "senior"],
+    "countries": [
+      "US",
+      "CA",
+      "GB",
+      "DE",
+      "NL",
+      "IE",
+      "AU"
+    ],
+    "searchQueries": [
+      "remote developer",
+      "remote engineer",
+      "remote golang"
+    ],
+    "keywords": [
+      "developer",
+      "engineer",
+      "backend",
+      "golang",
+      "entwickler"
+    ],
+    "excludeKeywords": [
+      "sales",
+      "manager"
+    ],
+    "employmentTypes": [
+      "FULLTIME",
+      "CONTRACTOR"
+    ],
+    "seniority": [
+      "mid",
+      "senior"
+    ],
     "remoteOnly": false,
     "relocationOnly": false,
     "requireRemoteOrRelocation": true,
-    "postedWithinHours": 48,
+    "postedWithinHours": 96,
     "companyWhitelist": [],
     "companyBlacklist": []
   },
@@ -17,5 +48,10 @@
   "maxPerRun": 20,
   "delaySeconds": 4,
   "allowInternship": false,
-  "minDescriptionRunes": 200
+  "minDescriptionRunes": 200,
+  "rotation": {
+    "slotHours": 4,
+    "countriesPerRun": 1
+  },
+  "summary": "onChange"
 }

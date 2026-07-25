@@ -163,3 +163,22 @@ func TestLoadReadsRotationAndSummary(t *testing.T) {
 		t.Errorf("summary = %q", cfg.Summary)
 	}
 }
+
+func TestLoadSplitsCommasInSingularKeyVar(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	os.WriteFile(cfgPath, []byte(`{"providers":["jsearch"],"filters":{}}`), 0o644)
+	// نام مفرد با چند کلید یک اشتباه طبیعی است و باید کار کند.
+	t.Setenv("RAPIDAPI_KEYS", "")
+	t.Setenv("RAPIDAPI_KEY", "a,b,c")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "tk")
+	t.Setenv("TELEGRAM_CHAT_ID", "@c")
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(cfg.Secrets.RapidAPIKeys) != 3 {
+		t.Fatalf("keys = %v, want 3 split keys", cfg.Secrets.RapidAPIKeys)
+	}
+}

@@ -322,3 +322,118 @@ func TestRateLimitBurstStillRetriesSameKey(t *testing.T) {
 		t.Errorf("expected a retry, got %d attempts", attempts)
 	}
 }
+
+// پاسخ‌های واقعی v5: نوع استخدام در فیلد مفرد بومی‌شده است ("Vollzeit")
+// و کد استاندارد فقط در آرایه‌ی job_employment_types می‌آید.
+func TestPrefersNormalizedEmploymentTypesArray(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"status":"OK","data":{"jobs":[{
+			"job_id":"j1","job_title":"Software Developer (m/w/d)",
+			"employer_name":"Academic Work","job_employment_type":"Vollzeit",
+			"job_employment_types":["FULLTIME"],
+			"job_apply_link":"https://a.test/1"}]}}`))
+	}))
+	defer srv.Close()
+
+	p := &Provider{keys: []string{"k"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	jobs, _ := p.SearchJobs(context.Background(), core.Filters{Keywords: []string{"dev"}})
+	if jobs[0].EmploymentType != "FULLTIME" {
+		t.Errorf("EmploymentType = %q, want FULLTIME (from the array, not the localized string)", jobs[0].EmploymentType)
+	}
+}
+
+// وقتی job_country خالی است، کشوری که جست‌وجو کردیم را می‌دانیم.
+func TestFallsBackToSearchedCountry(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"status":"OK","data":{"jobs":[{
+			"job_id":"j1","job_title":"Dev","employer_name":"A",
+			"job_country":null,"job_apply_link":"https://a.test/1"}]}}`))
+	}))
+	defer srv.Close()
+
+	p := &Provider{keys: []string{"k"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	jobs, _ := p.SearchJobs(context.Background(), core.Filters{
+		Keywords: []string{"dev"}, Countries: []string{"DE"},
+	})
+	if jobs[0].Country != "DE" {
+		t.Errorf("Country = %q, want DE from the search parameter", jobs[0].Country)
+	}
+}
+
+// job_location تنها جایی است که مکان واقعی می‌آید وقتی city/country خالی‌اند.
+func TestUsesJobLocationWhenCityAndCountryMissing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"status":"OK","data":{"jobs":[{
+			"job_id":"j1","job_title":"Dev","employer_name":"A",
+			"job_city":null,"job_country":null,
+			"job_location":"Gräfelfing     •  über Talent.de",
+			"job_apply_link":"https://a.test/1"}]}}`))
+	}))
+	defer srv.Close()
+
+	p := &Provider{keys: []string{"k"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	jobs, _ := p.SearchJobs(context.Background(), core.Filters{Keywords: []string{"dev"}})
+	if !strings.Contains(jobs[0].Location, "Gräfelfing") {
+		t.Errorf("Location = %q, want the job_location value", jobs[0].Location)
+	}
+}
+
+func TestParsesPostedAtFromTimestampFallback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"status":"OK","data":{"jobs":[{
+			"job_id":"j1","job_title":"Dev","employer_name":"A",
+			"job_posted_at_datetime_utc":null,"job_posted_at_timestamp":1769000000,
+			"job_apply_link":"https://a.test/1"}]}}`))
+	}))
+	defer srv.Close()
+
+	p := &Provider{keys: []string{"k"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	jobs, _ := p.SearchJobs(context.Background(), core.Filters{Keywords: []string{"dev"}})
+	if jobs[0].PostedAt.IsZero() {
+		t.Error("PostedAt should fall back to job_posted_at_timestamp")
+	}
+	if got := jobs[0].PostedAt.UTC().Unix(); got != 1769000000 {
+		t.Errorf("PostedAt unix = %d, want 1769000000", got)
+	}
+}
+
+// SearchQueries تعیین می‌کند چه چیزی به API می‌رود؛ Keywords فقط فیلتر است.
+func TestSendsSearchQueriesNotFilterKeywords(t *testing.T) {
+	var sent []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sent = append(sent, r.URL.Query().Get("query"))
+		w.Write([]byte(`{"status":"OK","data":{"jobs":[]}}`))
+	}))
+	defer srv.Close()
+
+	p := &Provider{keys: []string{"k"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	_, err := p.SearchJobs(context.Background(), core.Filters{
+		SearchQueries: []string{"remote developer"},
+		Keywords:      []string{"developer", "engineer", "designer"},
+	})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(sent) != 1 || sent[0] != "remote developer" {
+		t.Errorf("queries sent = %v, want [remote developer]", sent)
+	}
+}
+
+func TestFallsBackToKeywordsWhenNoSearchQueries(t *testing.T) {
+	var sent []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sent = append(sent, r.URL.Query().Get("query"))
+		w.Write([]byte(`{"status":"OK","data":{"jobs":[]}}`))
+	}))
+	defer srv.Close()
+
+	p := &Provider{keys: []string{"k"}, baseURL: srv.URL, client: srv.Client(), numPages: 1}
+	if _, err := p.SearchJobs(context.Background(), core.Filters{
+		Keywords: []string{"golang", "rust"},
+	}); err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(sent) != 2 {
+		t.Errorf("queries sent = %v, want the two keywords", sent)
+	}
+}

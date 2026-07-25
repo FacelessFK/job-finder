@@ -93,9 +93,13 @@ type keywordFilter struct {
 func (k keywordFilter) Name() string { return "keyword" }
 func (k keywordFilter) Evaluate(_ context.Context, j core.Job) (core.Decision, error) {
 	hay := strings.ToLower(j.Title + " " + j.Description)
+
+	// کلمات ممنوع فقط روی عنوان: تقریبا هر آگهی جایی از تیم فروش یا
+	// پشتیبانی حرف می‌زند و اعمالشان روی متن، آگهی‌های سالم را می‌کشد.
+	title := strings.ToLower(j.Title)
 	for _, ex := range k.exclude {
-		if ex != "" && strings.Contains(hay, ex) {
-			return reject("matched exclude keyword: " + ex), nil
+		if ex != "" && strings.Contains(title, ex) {
+			return reject("matched exclude keyword in title: " + ex), nil
 		}
 	}
 	if len(k.keywords) > 0 {

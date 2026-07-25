@@ -133,19 +133,22 @@ func atoiEnv(key string) int {
 	return n
 }
 
-// splitKeys کلیدهای RapidAPI را از env می‌خواند. RAPIDAPI_KEYS فهرستی
-// جداشده با کاما است؛ RAPIDAPI_KEY تک‌کلیدی و برای سازگاری با قبل.
+// splitKeys کلیدهای RapidAPI را از env می‌خواند. هر دو نام پشتیبانی
+// می‌شوند و هر دو با کاما شکسته می‌شوند: گذاشتنِ چند کلید زیر نام مفرد
+// اشتباه طبیعی‌ای است و نباید به یک کلیدِ بی‌معنیِ بلند تبدیل شود.
 // تکراری‌ها حذف می‌شوند تا یک کلیدِ سوخته دوبار امتحان نشود.
-func splitKeys(multi, single string) []string {
+func splitKeys(vars ...string) []string {
 	var out []string
 	seen := map[string]bool{}
-	for _, raw := range append(strings.Split(multi, ","), single) {
-		k := strings.TrimSpace(raw)
-		if k == "" || seen[k] {
-			continue
+	for _, v := range vars {
+		for _, raw := range strings.Split(v, ",") {
+			k := strings.TrimSpace(raw)
+			if k == "" || seen[k] {
+				continue
+			}
+			seen[k] = true
+			out = append(out, k)
 		}
-		seen[k] = true
-		out = append(out, k)
 	}
 	return out
 }

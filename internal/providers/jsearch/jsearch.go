@@ -88,7 +88,10 @@ func (p *Provider) Name() string { return "jsearch" }
 // SearchJobs ضرب کلمات کلیدی در کشورها را جست‌وجو می‌کند و نتایج را ادغام می‌کند.
 // شکست یک جست‌وجو بقیه را متوقف نمی‌کند؛ خطاها جمع و در پایان برگردانده می‌شوند.
 func (p *Provider) SearchJobs(ctx context.Context, f core.Filters) ([]core.Job, error) {
-	queries := f.Keywords
+	queries := f.SearchQueries
+	if len(queries) == 0 {
+		queries = f.Keywords
+	}
 	if len(queries) == 0 {
 		queries = []string{"software developer"}
 	}
@@ -162,7 +165,7 @@ func (p *Provider) searchOne(ctx context.Context, query, country, datePosted str
 		}
 		body, err := p.doRequest(ctx, u.String(), key)
 		if err == nil {
-			return parse(body)
+			return parse(body, country)
 		}
 		if isKeyDead(err) {
 			p.retire(idx)
@@ -226,43 +229,82 @@ type rawResp struct {
 	} `json:"data"`
 }
 type rawJob struct {
-	JobID          string `json:"job_id"`
-	JobTitle       string `json:"job_title"`
-	Employer       string `json:"employer_name"`
-	City           string `json:"job_city"`
-	Country        string `json:"job_country"`
-	IsRemote       bool   `json:"job_is_remote"`
-	Description    string `json:"job_description"`
-	ApplyLink      string `json:"job_apply_link"`
-	EmploymentType string `json:"job_employment_type"`
-	PostedAt       string `json:"job_posted_at_datetime_utc"`
+	JobID       string `json:"job_id"`
+	JobTitle    string `json:"job_title"`
+	Employer    string `json:"employer_name"`
+	City        string `json:"job_city"`
+	Country     string `json:"job_country"`
+	Location    string `json:"job_location"`
+	IsRemote    bool   `json:"job_is_remote"`
+	Description string `json:"job_description"`
+	ApplyLink   string `json:"job_apply_link"`
+	// EmploymentType در پاسخ‌های واقعی بومی‌شده است ("Vollzeit")؛
+	// کد استاندارد فقط در آرایه می‌آید.
+	EmploymentType  string   `json:"job_employment_type"`
+	EmploymentTypes []string `json:"job_employment_types"`
+	PostedAt        string   `json:"job_posted_at_datetime_utc"`
+	PostedAtUnix    int64    `json:"job_posted_at_timestamp"`
 }
 
-func parse(body []byte) ([]core.Job, error) {
+// employmentType کد استاندارد را ترجیح می‌دهد و فقط در نبودش به رشته‌ی
+// بومی‌شده برمی‌گردد.
+func (d rawJob) employmentType() string {
+	if len(d.EmploymentTypes) > 0 && d.EmploymentTypes[0] != "" {
+		return d.EmploymentTypes[0]
+	}
+	return d.EmploymentType
+}
+
+// location وقتی شهر و کشور خالی‌اند از job_location استفاده می‌کند.
+func (d rawJob) location() string {
+	loc := d.City
+	if d.Country != "" {
+		if loc != "" {
+			loc += ", "
+		}
+		loc += d.Country
+	}
+	if loc == "" {
+		return d.Location
+	}
+	return loc
+}
+
+func (d rawJob) postedAt() time.Time {
+	if t := parseTime(d.PostedAt); !t.IsZero() {
+		return t
+	}
+	if d.PostedAtUnix > 0 {
+		return time.Unix(d.PostedAtUnix, 0).UTC()
+	}
+	return time.Time{}
+}
+
+// parse پاسخ را به مدل دامنه تبدیل می‌کند. searchedCountry کشوری است که
+// درخواست کردیم؛ در پاسخ‌های واقعی job_country اغلب خالی است و بدون این
+// جایگزین، فیلتر کشور عملاً کور می‌شود.
+func parse(body []byte, searchedCountry string) ([]core.Job, error) {
 	var r rawResp
 	if err := json.Unmarshal(body, &r); err != nil {
 		return nil, fmt.Errorf("parse jsearch: %w", err)
 	}
 	jobs := make([]core.Job, 0, len(r.Data.Jobs))
 	for _, d := range r.Data.Jobs {
-		loc := d.City
-		if d.Country != "" {
-			if loc != "" {
-				loc += ", "
-			}
-			loc += d.Country
+		country := d.Country
+		if country == "" {
+			country = strings.ToUpper(searchedCountry)
 		}
 		jobs = append(jobs, core.Job{
 			ID:             d.JobID,
 			Title:          d.JobTitle,
 			Company:        d.Employer,
-			Location:       loc,
-			Country:        d.Country,
+			Location:       d.location(),
+			Country:        country,
 			Remote:         d.IsRemote,
-			EmploymentType: d.EmploymentType,
+			EmploymentType: d.employmentType(),
 			Description:    d.Description,
 			URL:            d.ApplyLink,
-			PostedAt:       parseTime(d.PostedAt),
+			PostedAt:       d.postedAt(),
 			Source:         "jsearch",
 		})
 	}
