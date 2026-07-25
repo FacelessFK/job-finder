@@ -13,13 +13,56 @@ import (
 func BuildRuleChain(log *slog.Logger, cfg core.Config) *Chain {
 	f := cfg.Filters
 	return NewChain(log,
+		countryFilter{allowed: upperAll(f.Countries)},
 		employmentFilter{allowInternship: cfg.AllowInternship, allowed: upperAll(f.EmploymentTypes)},
+		seniorityFilter{allowed: lowerAll(f.Seniority)},
 		keywordFilter{keywords: lowerAll(f.Keywords), exclude: lowerAll(f.ExcludeKeywords)},
 		companyFilter{whitelist: lowerAll(f.CompanyWhitelist), blacklist: lowerAll(f.CompanyBlacklist)},
 		freshnessFilter{withinHours: f.PostedWithinHours},
-		valueFilter{remoteOnly: f.RemoteOnly, relocationOnly: f.RelocationOnly},
+		valueFilter{
+			remoteOnly:     f.RemoteOnly,
+			relocationOnly: f.RelocationOnly,
+			requireEither:  f.RequireRemoteOrRelocation,
+		},
 		spamFilter{minRunes: cfg.MinDescriptionRunes},
 	)
+}
+
+// --- Country ---
+
+// countryFilter آگهی‌های خارج از فهرست کشورها را رد می‌کند.
+// کشور نامشخص رد نمی‌شود؛ برخی منابع این فیلد را پر نمی‌کنند.
+type countryFilter struct {
+	allowed []string
+}
+
+func (c countryFilter) Name() string { return "country" }
+func (c countryFilter) Evaluate(_ context.Context, j core.Job) (core.Decision, error) {
+	if len(c.allowed) == 0 || j.Country == "" {
+		return pass(), nil
+	}
+	if !contains(c.allowed, strings.ToUpper(strings.TrimSpace(j.Country))) {
+		return reject("country not in allowed list: " + j.Country), nil
+	}
+	return pass(), nil
+}
+
+// --- Seniority ---
+
+// seniorityFilter سطح‌های ناخواسته را رد می‌کند؛ سطح نامشخص رد نمی‌شود.
+type seniorityFilter struct {
+	allowed []string
+}
+
+func (s seniorityFilter) Name() string { return "seniority" }
+func (s seniorityFilter) Evaluate(_ context.Context, j core.Job) (core.Decision, error) {
+	if len(s.allowed) == 0 || j.Seniority == "" {
+		return pass(), nil
+	}
+	if !contains(s.allowed, strings.ToLower(strings.TrimSpace(j.Seniority))) {
+		return reject("seniority not in allowed list: " + j.Seniority), nil
+	}
+	return pass(), nil
 }
 
 // --- Employment ---
@@ -114,6 +157,7 @@ func (fr freshnessFilter) Evaluate(_ context.Context, j core.Job) (core.Decision
 type valueFilter struct {
 	remoteOnly     bool
 	relocationOnly bool
+	requireEither  bool
 }
 
 func (v valueFilter) Name() string { return "value" }
@@ -134,11 +178,13 @@ func (v valueFilter) Evaluate(_ context.Context, j core.Job) (core.Decision, err
 			return pass(), nil
 		}
 		return reject("no relocation"), nil
-	default:
+	case v.requireEither:
 		if j.Remote || j.Relocation {
 			return pass(), nil
 		}
 		return reject("neither remote nor relocation"), nil
+	default:
+		return pass(), nil
 	}
 }
 

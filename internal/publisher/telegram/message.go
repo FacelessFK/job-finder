@@ -58,3 +58,22 @@ func humanizeAge(t time.Time) string {
 		return fmt.Sprintf("%d days ago", int(d.Hours()/24))
 	}
 }
+
+// formatSummary گزارش پایان اجرا را می‌سازد؛ همیشه فرستاده می‌شود تا سکوت
+// کانال دیگر دوپهلو نباشد.
+func formatSummary(s core.RunSummary) string {
+	var b strings.Builder
+	if len(s.Errors) > 0 {
+		b.WriteString("⚠️ اجرا با خطا تمام شد\n")
+	} else if s.Published == 0 {
+		b.WriteString("✅ اجرا انجام شد — آگهی جدیدی نبود\n")
+	} else {
+		fmt.Fprintf(&b, "✅ اجرا انجام شد — %d آگهی جدید\n", s.Published)
+	}
+	fmt.Fprintf(&b, "دریافت‌شده: %d | بعد از حذف تکراری: %d | تازه: %d | منتشرشده: %d\n",
+		s.Fetched, s.AfterDedup, s.AfterSeen, s.Published)
+	for _, e := range s.Errors {
+		fmt.Fprintf(&b, "• %s\n", e)
+	}
+	return b.String()
+}

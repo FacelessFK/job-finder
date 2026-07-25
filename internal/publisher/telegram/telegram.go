@@ -47,11 +47,23 @@ type apiResp struct {
 
 // Publish یک جاب را به کانال می‌فرستد.
 func (c *Client) Publish(ctx context.Context, job core.Job) error {
+	return c.send(ctx, formatMessage(job), false)
+}
+
+// PublishSummary گزارش پایان اجرا را می‌فرستد.
+func (c *Client) PublishSummary(ctx context.Context, s core.RunSummary) error {
+	return c.send(ctx, formatSummary(s), true)
+}
+
+func (c *Client) send(ctx context.Context, text string, silent bool) error {
 	endpoint := fmt.Sprintf("%s/bot%s/sendMessage", c.baseURL, c.token)
 	form := url.Values{}
 	form.Set("chat_id", c.chatID)
-	form.Set("text", formatMessage(job))
+	form.Set("text", text)
 	form.Set("disable_web_page_preview", "false")
+	if silent {
+		form.Set("disable_notification", "true")
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {

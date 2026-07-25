@@ -35,3 +35,28 @@ func TestDetectsRelocationAndEmployment(t *testing.T) {
 		t.Errorf("employment: %q", j.EmploymentType)
 	}
 }
+
+func TestDetectsWiderRelocationSignals(t *testing.T) {
+	phrases := []string{
+		"we offer visa sponsorship",
+		"visa sponsor available for the right candidate",
+		"relocation assistance provided",
+		"we provide work permit support",
+		"sponsorship available",
+		"help with relocation",
+		"eligible for skilled worker visa",
+	}
+	for _, p := range phrases {
+		j := core.Job{Title: "Engineer", Description: p}
+		if !Job(j).Relocation {
+			t.Errorf("phrase %q should be detected as relocation", p)
+		}
+	}
+}
+
+func TestDoesNotFlagRelocationOnUnrelatedText(t *testing.T) {
+	j := core.Job{Title: "Engineer", Description: "you will relocate data between clusters"}
+	if Job(j).Relocation {
+		t.Error("unrelated use of relocate should not set Relocation")
+	}
+}

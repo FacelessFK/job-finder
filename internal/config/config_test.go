@@ -45,3 +45,55 @@ func TestLoadFailsWhenProviderSecretMissing(t *testing.T) {
 		t.Fatal("expected error for missing RAPIDAPI_KEY")
 	}
 }
+
+func TestLoadReadsCountriesNumPagesAndValueFlag(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	os.WriteFile(cfgPath, []byte(`{
+		"providers":["jsearch"],
+		"filters":{
+			"countries":["US","CA","AU"],
+			"seniority":["mid","senior"],
+			"requireRemoteOrRelocation":true
+		},
+		"numPages":2
+	}`), 0o644)
+
+	t.Setenv("RAPIDAPI_KEY", "rk")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "tk")
+	t.Setenv("TELEGRAM_CHAT_ID", "@c")
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(cfg.Filters.Countries) != 3 || cfg.Filters.Countries[2] != "AU" {
+		t.Errorf("countries: %+v", cfg.Filters.Countries)
+	}
+	if len(cfg.Filters.Seniority) != 2 {
+		t.Errorf("seniority: %+v", cfg.Filters.Seniority)
+	}
+	if !cfg.Filters.RequireRemoteOrRelocation {
+		t.Error("requireRemoteOrRelocation should be true")
+	}
+	if cfg.NumPages != 2 {
+		t.Errorf("NumPages = %d, want 2", cfg.NumPages)
+	}
+}
+
+func TestLoadDefaultsNumPagesToOne(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	os.WriteFile(cfgPath, []byte(`{"providers":["jsearch"],"filters":{}}`), 0o644)
+	t.Setenv("RAPIDAPI_KEY", "rk")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "tk")
+	t.Setenv("TELEGRAM_CHAT_ID", "@c")
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.NumPages != 1 {
+		t.Errorf("NumPages = %d, want default 1", cfg.NumPages)
+	}
+}

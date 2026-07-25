@@ -23,10 +23,18 @@ func (f fakeProvider) SearchJobs(context.Context, core.Filters) ([]core.Job, err
 	return f.jobs, f.err
 }
 
-type fakePublisher struct{ sent []core.Job }
+type fakePublisher struct {
+	sent      []core.Job
+	summaries []core.RunSummary
+}
 
 func (f *fakePublisher) Publish(_ context.Context, j core.Job) error {
 	f.sent = append(f.sent, j)
+	return nil
+}
+
+func (f *fakePublisher) PublishSummary(_ context.Context, s core.RunSummary) error {
+	f.summaries = append(f.summaries, s)
 	return nil
 }
 
@@ -79,5 +87,39 @@ func TestRunIsolatesProviderError(t *testing.T) {
 	}
 	if len(pub.sent) != 1 {
 		t.Errorf("expected 1 published from good provider, got %d", len(pub.sent))
+	}
+}
+
+func TestRunPublishesSummaryWhenNothingIsNew(t *testing.T) {
+	prov := fakeProvider{name: "fake", jobs: nil}
+	pub := &fakePublisher{}
+	st, _ := store.NewFileStore(t.TempDir()+"/seen.json", 100)
+
+	p := New([]providers.Provider{prov}, allowAllChain(), st, pub, quiet(), core.Config{MaxPerRun: 10})
+	if _, err := p.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(pub.summaries) != 1 {
+		t.Fatalf("expected exactly 1 summary even with 0 jobs, got %d", len(pub.summaries))
+	}
+	if pub.summaries[0].Published != 0 {
+		t.Errorf("summary.Published = %d, want 0", pub.summaries[0].Published)
+	}
+}
+
+func TestSummaryReportsProviderErrors(t *testing.T) {
+	bad := fakeProvider{name: "bad", err: context.DeadlineExceeded}
+	pub := &fakePublisher{}
+	st, _ := store.NewFileStore(t.TempDir()+"/seen.json", 100)
+
+	p := New([]providers.Provider{bad}, allowAllChain(), st, pub, quiet(), core.Config{MaxPerRun: 10})
+	if _, err := p.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(pub.summaries) != 1 {
+		t.Fatalf("expected 1 summary, got %d", len(pub.summaries))
+	}
+	if len(pub.summaries[0].Errors) == 0 {
+		t.Error("summary should carry the provider error so a silent run is impossible")
 	}
 }

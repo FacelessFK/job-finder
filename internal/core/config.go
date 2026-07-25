@@ -18,6 +18,7 @@ type Config struct {
 	DelaySeconds        int
 	AllowInternship     bool
 	MinDescriptionRunes int
+	NumPages            int // تعداد صفحه در هر جست‌وجو؛ هر صفحه یک درخواست API
 	SeenPath            string
 	MaxSeen             int
 	Secrets             Secrets

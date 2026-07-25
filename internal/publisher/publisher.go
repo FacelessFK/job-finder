@@ -10,4 +10,7 @@ import (
 // Publisher یک مقصد انتشار (تلگرام و ...).
 type Publisher interface {
 	Publish(ctx context.Context, job core.Job) error
+	// PublishSummary گزارش پایان اجرا را می‌فرستد تا اجرای بی‌نتیجه
+	// از اجرای انجام‌نشده یا خطاخورده قابل تشخیص باشد.
+	PublishSummary(ctx context.Context, s core.RunSummary) error
 }

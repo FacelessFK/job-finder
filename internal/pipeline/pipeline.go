@@ -17,12 +17,7 @@ import (
 )
 
 // Stats خلاصه‌ی یک اجرا.
-type Stats struct {
-	Fetched    int
-	AfterDedup int
-	AfterSeen  int
-	Published  int
-}
+type Stats = core.RunSummary
 
 // Pipeline اجزای سرویس را نگه می‌دارد.
 type Pipeline struct {
@@ -55,8 +50,9 @@ func (p *Pipeline) Run(ctx context.Context) (Stats, error) {
 	var stats Stats
 
 	// ۱) گرفتن موازی از همه Providerها (Error Isolation)
-	all := p.fetchAll(ctx)
+	all, fetchErrs := p.fetchAll(ctx)
 	stats.Fetched = len(all)
+	stats.Errors = fetchErrs
 
 	// ۲) نرمال‌سازی
 	for i := range all {
@@ -103,34 +99,42 @@ func (p *Pipeline) Run(ctx context.Context) (Stats, error) {
 	if err := p.store.Save(ctx); err != nil {
 		return stats, err
 	}
+
+	// ۹) گزارش پایان اجرا؛ حتی وقتی چیزی منتشر نشده، تا سکوت کانال
+	// دیگر به معنای «معلوم نیست چه شد» نباشد.
+	if err := p.pub.PublishSummary(ctx, stats); err != nil {
+		p.log.Warn("summary publish failed", "err", err)
+	}
+
 	p.log.Info("run complete",
 		"fetched", stats.Fetched, "afterDedup", stats.AfterDedup,
-		"afterSeen", stats.AfterSeen, "published", stats.Published)
+		"afterSeen", stats.AfterSeen, "published", stats.Published,
+		"errors", len(stats.Errors))
 	return stats, nil
 }
 
-func (p *Pipeline) fetchAll(ctx context.Context) []core.Job {
+func (p *Pipeline) fetchAll(ctx context.Context) ([]core.Job, []string) {
 	var (
-		mu  sync.Mutex
-		all []core.Job
-		wg  sync.WaitGroup
+		mu   sync.Mutex
+		all  []core.Job
+		errs []string
+		wg   sync.WaitGroup
 	)
 	for _, prov := range p.providers {
 		wg.Add(1)
 		go func(pr providers.Provider) {
 			defer wg.Done()
 			jobs, err := pr.SearchJobs(ctx, p.filters)
+			mu.Lock()
 			if err != nil {
 				p.log.Warn("provider fetch failed", "provider", pr.Name(), "err", err)
+				errs = append(errs, pr.Name()+": "+err.Error())
 			}
-			if len(jobs) > 0 {
-				mu.Lock()
-				all = append(all, jobs...)
-				mu.Unlock()
-			}
+			all = append(all, jobs...)
+			mu.Unlock()
 			p.log.Info("provider fetched", "provider", pr.Name(), "count", len(jobs))
 		}(prov)
 	}
 	wg.Wait()
-	return all
+	return all, errs
 }

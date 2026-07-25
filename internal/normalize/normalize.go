@@ -12,9 +12,18 @@ var remoteSignals = []string{
 	"remote-first", "remote first", "fully-remote",
 }
 
+// relocationSignals عبارت‌هایی که پشتیبانی از ویزا یا جابه‌جایی را نشان می‌دهند.
+// عمداً به «relocat» تنهاِ خام تکیه نمی‌کنیم چون در متن فنی هم می‌آید
+// (مثل relocate data)؛ هر الگو باید کنار واژه‌ی مرتبط بیاید.
 var relocationSignals = []string{
-	"visa sponsorship", "relocation package", "relocation assistance",
-	"relocation support", "we sponsor",
+	"visa sponsorship", "visa sponsor", "sponsor a visa", "sponsor your visa",
+	"sponsorship available", "sponsorship provided", "we sponsor", "will sponsor",
+	"work visa", "work permit", "working permit", "skilled worker visa",
+	"blue card", "h1b", "h-1b", "tier 2 visa",
+	"relocation package", "relocation assistance", "relocation support",
+	"relocation bonus", "relocation allowance", "relocation help",
+	"help with relocation", "help you relocate", "we relocate you",
+	"willing to relocate", "relocation offered", "relocation provided",
 }
 
 // Job یک جاب را نرمال می‌کند: پاک‌سازی فاصله‌ها، استانداردسازی نوع/سطح، و

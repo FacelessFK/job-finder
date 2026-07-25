@@ -17,6 +17,7 @@ type fileConfig struct {
 	DelaySeconds        int          `json:"delaySeconds"`
 	AllowInternship     bool         `json:"allowInternship"`
 	MinDescriptionRunes int          `json:"minDescriptionRunes"`
+	NumPages            int          `json:"numPages"`
 }
 
 // Load فایل config و رازهای env را می‌خواند و اعتبارسنجی می‌کند.
@@ -40,6 +41,7 @@ func Load(path string) (core.Config, error) {
 		DelaySeconds:        orDefault(fc.DelaySeconds, 4),
 		AllowInternship:     fc.AllowInternship,
 		MinDescriptionRunes: orDefault(fc.MinDescriptionRunes, 200),
+		NumPages:            orDefault(fc.NumPages, 1),
 		SeenPath:            getEnv("SEEN_PATH", "data/seen_jobs.json"),
 		MaxSeen:             orDefault(atoiEnv("MAX_SEEN"), 5000),
 		Secrets: core.Secrets{

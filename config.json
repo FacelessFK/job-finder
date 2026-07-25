@@ -1,18 +1,20 @@
 {
   "providers": ["jsearch"],
   "filters": {
-    "countries": ["US", "DE", "NL"],
+    "countries": ["US", "CA", "MX", "GB", "DE", "NL", "IE", "AU"],
     "keywords": ["developer", "engineer", "designer", "product manager"],
     "excludeKeywords": ["sales"],
     "employmentTypes": ["FULLTIME", "CONTRACTOR"],
-    "seniority": ["mid", "senior"],
+    "seniority": ["mid", "senior", "lead"],
     "remoteOnly": false,
     "relocationOnly": false,
+    "requireRemoteOrRelocation": true,
     "postedWithinHours": 48,
     "companyWhitelist": [],
     "companyBlacklist": []
   },
-  "maxPerRun": 20,
+  "numPages": 1,
+  "maxPerRun": 25,
   "delaySeconds": 4,
   "allowInternship": false,
   "minDescriptionRunes": 200

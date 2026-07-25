@@ -15,6 +15,7 @@ type Job struct {
 	Title          string
 	Company        string
 	Location       string
+	Country        string // کد دو‌حرفی ISO، مثل US یا DE
 	Remote         bool
 	Relocation     bool
 	EmploymentType string // FULLTIME | PARTTIME | CONTRACTOR | INTERN
@@ -37,6 +38,19 @@ type Filters struct {
 	PostedWithinHours int
 	CompanyWhitelist  []string
 	CompanyBlacklist  []string
+
+	// RequireRemoteOrRelocation آگهی حضوریِ بدون پشتیبانی جابه‌جایی را رد می‌کند.
+	// برای متقاضیِ خارج از کشورِ آگهی معمولاً باید روشن باشد.
+	RequireRemoteOrRelocation bool
+}
+
+// RunSummary خلاصه‌ی یک اجرا؛ برای گزارش‌دادن حتی وقتی چیزی منتشر نشده.
+type RunSummary struct {
+	Fetched    int
+	AfterDedup int
+	AfterSeen  int
+	Published  int
+	Errors     []string
 }
 
 // Decision نتیجه‌ی یک فیلتر.

@@ -4,14 +4,18 @@ package jsearch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aghaie/job-finder/internal/core"
 	"github.com/aghaie/job-finder/internal/providers"
+	"github.com/aghaie/job-finder/internal/ratelimit"
 	"github.com/aghaie/job-finder/internal/retry"
 )
 
@@ -21,9 +25,11 @@ func init() {
 
 // Provider منبع JSearch.
 type Provider struct {
-	key     string
-	baseURL string
-	client  *http.Client
+	key      string
+	baseURL  string
+	client   *http.Client
+	numPages int
+	limiter  *ratelimit.Limiter
 }
 
 // New یک Provider از روی config می‌سازد.
@@ -31,45 +37,97 @@ func New(cfg core.Config) (providers.Provider, error) {
 	if cfg.Secrets.RapidAPIKey == "" {
 		return nil, fmt.Errorf("RAPIDAPI_KEY is required for jsearch")
 	}
+	pages := cfg.NumPages
+	if pages <= 0 {
+		pages = 1
+	}
 	return &Provider{
-		key:     cfg.Secrets.RapidAPIKey,
-		baseURL: "https://jsearch.p.rapidapi.com",
-		client:  &http.Client{Timeout: 30 * time.Second},
+		key:      cfg.Secrets.RapidAPIKey,
+		baseURL:  "https://jsearch.p.rapidapi.com",
+		client:   &http.Client{Timeout: 30 * time.Second},
+		numPages: pages,
+		// حالا ضربِ کشور در کلمه‌ی کلیدی ده‌ها درخواست پشت‌سرهم می‌سازد؛
+		// بدون فاصله‌گذاری، سقفِ نرخِ RapidAPI فعال می‌شود.
+		limiter: ratelimit.New(300 * time.Millisecond),
 	}, nil
 }
 
 func (p *Provider) Name() string { return "jsearch" }
 
-// SearchJobs برای هر کلمه‌ی کلیدی جست‌وجو می‌کند و نتایج را ادغام می‌کند.
+// SearchJobs ضرب کلمات کلیدی در کشورها را جست‌وجو می‌کند و نتایج را ادغام می‌کند.
+// شکست یک جست‌وجو بقیه را متوقف نمی‌کند؛ خطاها جمع و در پایان برگردانده می‌شوند.
 func (p *Provider) SearchJobs(ctx context.Context, f core.Filters) ([]core.Job, error) {
 	queries := f.Keywords
 	if len(queries) == 0 {
 		queries = []string{"software developer"}
 	}
+	// رشته‌ی خالی یعنی «بدون قید کشور» تا رفتار قبلی حفظ شود.
+	countries := normalizeCountries(f.Countries)
 	datePosted := datePostedFromHours(f.PostedWithinHours)
 
-	var all []core.Job
-	for _, q := range queries {
-		jobs, err := p.searchOne(ctx, q, datePosted, f.RemoteOnly)
-		if err != nil {
-			return all, err
+	var (
+		all  []core.Job
+		seen = map[string]bool{}
+		errs []error
+	)
+	for _, c := range countries {
+		for _, q := range queries {
+			jobs, err := p.searchOne(ctx, q, c, datePosted, f.RemoteOnly)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			for _, j := range jobs {
+				fp := j.Fingerprint()
+				if seen[fp] {
+					continue
+				}
+				seen[fp] = true
+				all = append(all, j)
+			}
 		}
-		all = append(all, jobs...)
 	}
-	return all, nil
+	return all, errors.Join(errs...)
 }
 
-func (p *Provider) searchOne(ctx context.Context, query, datePosted string, remoteOnly bool) ([]core.Job, error) {
+// normalizeCountries کدها را کوچک و یکتا می‌کند؛ فهرست خالی یک جست‌وجوی بی‌قید می‌دهد.
+func normalizeCountries(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := map[string]bool{}
+	for _, c := range in {
+		c = strings.ToLower(strings.TrimSpace(c))
+		if c == "" || seen[c] {
+			continue
+		}
+		seen[c] = true
+		out = append(out, c)
+	}
+	if len(out) == 0 {
+		return []string{""}
+	}
+	return out
+}
+
+func (p *Provider) searchOne(ctx context.Context, query, country, datePosted string, remoteOnly bool) ([]core.Job, error) {
 	u, _ := url.Parse(p.baseURL + "/search-v2")
 	q := u.Query()
 	q.Set("query", query)
 	q.Set("date_posted", datePosted)
 	q.Set("page", "1")
-	q.Set("num_pages", "1")
+	q.Set("num_pages", strconv.Itoa(p.numPages))
+	if country != "" {
+		q.Set("country", country)
+	}
 	if remoteOnly {
 		q.Set("remote_jobs_only", "true")
 	}
 	u.RawQuery = q.Encode()
+
+	if p.limiter != nil {
+		if err := p.limiter.Wait(ctx); err != nil {
+			return nil, err
+		}
+	}
 
 	var body []byte
 	err := retry.Do(ctx, 3, 500*time.Millisecond, isRetryable, func() error {
@@ -136,6 +194,7 @@ func parse(body []byte) ([]core.Job, error) {
 			Title:          d.JobTitle,
 			Company:        d.Employer,
 			Location:       loc,
+			Country:        d.Country,
 			Remote:         d.IsRemote,
 			EmploymentType: d.EmploymentType,
 			Description:    d.Description,
