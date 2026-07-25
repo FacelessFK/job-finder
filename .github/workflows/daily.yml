@@ -3,7 +3,7 @@ name: job-finder
 on:
   schedule:
     # هر ۴ ساعت یک اجرا، هر اجرا یک کشور. شش اجرا در روز یعنی دوره‌ی
-    # کامل بیست کشور در ۳٫۳ روز، که با postedWithinHours=96 پوشش داده می‌شود.
+    # کامل ده کشور در ۴۰ ساعت، که با postedWithinHours=96 پوشش داده می‌شود.
     # دقیقه‌ی غیرگرد عمدی است: صف زمان‌بندی گیت‌هاب سر ساعت شلوغ‌ترین
     # حالت را دارد و تاخیر یا حذف اجرا رایج است.
     - cron: "47 1,5,9,13,17,21 * * *"
@@ -24,9 +24,30 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
+      # هر دو نام پاس داده می‌شوند تا تغییر نام سکرت اجرا را نشکند.
+      # کد هر دو را با کاما می‌شکند و تکراری‌ها را حذف می‌کند.
+      - name: Check secrets
+        env:
+          RAPIDAPI_KEYS: ${{ secrets.RAPIDAPI_KEYS }}
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          fail=0
+          if [ -z "$RAPIDAPI_KEYS" ] && [ -z "$RAPIDAPI_KEY" ]; then
+            echo "::error::هیچ‌کدام از سکرت‌های RAPIDAPI_KEYS یا RAPIDAPI_KEY ست نشده‌اند"
+            fail=1
+          fi
+          [ -z "$TELEGRAM_BOT_TOKEN" ] && { echo "::error::TELEGRAM_BOT_TOKEN ست نشده"; fail=1; }
+          [ -z "$TELEGRAM_CHAT_ID" ]   && { echo "::error::TELEGRAM_CHAT_ID ست نشده"; fail=1; }
+          echo "RAPIDAPI_KEYS: $(echo "$RAPIDAPI_KEYS" | awk -F, '{print NF*(length($0)>0)}') کلید"
+          echo "RAPIDAPI_KEY:  $(echo "$RAPIDAPI_KEY"  | awk -F, '{print NF*(length($0)>0)}') کلید"
+          exit $fail
+
       - name: Run
         env:
           RAPIDAPI_KEYS: ${{ secrets.RAPIDAPI_KEYS }}
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
           LINKEDIN_RAPIDAPI_KEY: ${{ secrets.LINKEDIN_RAPIDAPI_KEY }}
           LINKEDIN_RAPIDAPI_HOST: ${{ secrets.LINKEDIN_RAPIDAPI_HOST }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
